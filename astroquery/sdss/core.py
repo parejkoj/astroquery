@@ -82,6 +82,9 @@ class SDSSClass(BaseQuery):
             Target names. If given, every coordinate should have a
             corresponding name, and it gets repeated in the query result.
             It generates unique object names by default.
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
         drorurl : str or int
             The data release of the SDSS to use (if an integer or short string)
             or the full URL to send the query (if a longer string).
@@ -204,6 +207,9 @@ class SDSSClass(BaseQuery):
         obj_names : str, or list or `~astropy.table.Column`, optional
             Target names. If given, every coordinate should have a
             corresponding name, and it gets repeated in the query result.
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
         drorurl : str or int
             The data release of the SDSS to use (if an integer or short string)
             or the full URL to send the query (if a longer string).
@@ -275,6 +281,9 @@ class SDSSClass(BaseQuery):
             Field name to check whether a valid PhotoObjAll or SpecObjAll
             field name. If `True` or it is an invalid field name all the valid
             field names are returned as a dict.
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
         drorurl : str or int
             The data release of the SDSS to use (if an integer or short string)
             or the full URL to send the query (if a longer string).
@@ -351,6 +360,9 @@ class SDSSClass(BaseQuery):
             Field name to check whether a valid PhotoObjAll or SpecObjAll
             field name. If `True` or it is an invalid field name all the valid
             field names are returned as a dict.
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
         drorurl : str or int
             The data release of the SDSS to use (if an integer or short string)
             or the full URL to send the query (if a longer string).
@@ -491,6 +503,9 @@ class SDSSClass(BaseQuery):
         timeout : float, optional
             Time limit (in seconds) for establishing successful connection with
             remote server.  Defaults to `SDSSClass.TIMEOUT`.
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
         drorurl : str or int
             The data release of the SDSS to use (if an integer or short string)
             or the full URL to send the query (if a longer string).
@@ -624,6 +639,9 @@ class SDSSClass(BaseQuery):
             remote server.  Defaults to `SDSSClass.TIMEOUT`.
         cache : bool
             Cache the images using astropy's caching system
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
         drorurl : str or int
             The data release of the SDSS to use (if an integer or short string)
             or the full URL to send the query (if a longer string).
