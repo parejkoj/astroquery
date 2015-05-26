@@ -999,7 +999,7 @@ class SDSSClass(BaseQuery):
 
         return request_payload
 
-    def _get_query_url(drorurl, suffix):
+    def _get_query_url(self, drorurl, suffix):
         if isinstance(drorurl, basestring) and len(drorurl) > 2:
             return drorurl
         else:
