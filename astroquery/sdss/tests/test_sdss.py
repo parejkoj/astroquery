@@ -17,7 +17,8 @@ from ...utils import commons
 DATA_FILES = {'spectra_id': 'xid_sp.txt',
               'images_id': 'xid_im.txt',
               'spectra': 'emptyfile.fits',
-              'images': 'emptyfile.fits'}
+              'images': 'emptyfile.fits'
+              }
 
 
 @pytest.fixture

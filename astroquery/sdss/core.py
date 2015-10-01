@@ -1,17 +1,10 @@
 # Licensed under a 3-clause BSD style license - see LICENSE.rst
 """
-
-Author: Jordan Mirocha
-Affiliation: University of Colorado at Boulder
-Created on: Sun Apr 14 19:18:43 2013
-
-Description: Access Sloan Digital Sky Survey database online.
-
+Access Sloan Digital Sky Survey database online.
 """
-
-from __future__ import print_function
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
 import io
-import warnings
 import numpy as np
 from astropy import units as u
 import astropy.coordinates as coord
@@ -20,47 +13,47 @@ from ..query import BaseQuery
 from . import conf
 from ..utils import commons, async_to_sync
 from ..utils.docstr_chompers import prepend_docstr_noreturns
-from ..exceptions import RemoteServiceError, NoResultsWarning
+from ..exceptions import RemoteServiceError
+
+from .field_names import photoobj_defs, specobj_defs, crossid_defs, get_field_info
 
 __all__ = ['SDSS', 'SDSSClass']
-
 __doctest_skip__ = ['SDSSClass.*']
 
-from .field_names import (photoobj_defs, specobj_defs, photoobj_all,
-                          specobj_all, crossid_defs)
 
-# Cross-correlation templates from DR-7
-spec_templates = {'star_O': 0, 'star_OB': 1, 'star_B': 2, 'star_A': [3, 4],
-                  'star_FA': 5, 'star_F': [6, 7], 'star_G': [8, 9],
-                  'star_K': 10, 'star_M1': 11, 'star_M3': 12, 'star_M5': 13,
-                  'star_M8': 14, 'star_L1': 15, 'star_wd': [16, 20, 21],
-                  'star_carbon': [17, 18, 19], 'star_Ksubdwarf': 22,
-                  'galaxy_early': 23, 'galaxy': [24, 25, 26],
-                  'galaxy_late': 27, 'galaxy_lrg': 28, 'qso': 29,
-                  'qso_bal': [30, 31], 'qso_bright': 32
-                  }
-
-sdss_arcsec_per_pixel = 0.396
+sdss_arcsec_per_pixel = 0.396 * u.arcsec/u.pixel
 
 
 @async_to_sync
 class SDSSClass(BaseQuery):
-
-    BASE_URL = conf.server
-    SPECTRO_OPTICAL = BASE_URL
-    IMAGING = BASE_URL + '/boss/photoObj/frames'
-    TEMPLATES = 'http://classic.sdss.org/dr7/algorithms/spectemplates/spDR2'
-    MAXQUERIES = conf.maxqueries
-    AVAILABLE_TEMPLATES = spec_templates
     TIMEOUT = conf.timeout
+    QUERY_URL_SUFFIX = '/dr{dr}/en/tools/search/x_sql.aspx'
+    XID_URL_SUFFIX = '/dr{dr}/en/tools/crossid/x_crossid.aspx'
+    IMAGING_URL_SUFFIX = ('{base}/dr{dr}/boss/photoObj/frames/'
+                          '{rerun}/{run}/{camcol}/'
+                          'frame-{band}-{run:06d}-{camcol}-'
+                          '{field:04d}.fits.bz2')
+    SPECTRA_URL_SUFFIX = ('{base}/dr{dr}/{instrument}/spectro/redux/'
+                          '{run2d}/spectra/{plate:04d}/'
+                          'spec-{plate:04d}-{mjd}-{fiber:04d}.fits')
 
-    QUERY_URL = 'http://skyserver.sdss3.org/public/en/tools/search/x_sql.aspx'
-    XID_URL = 'http://skyserver.sdss.org/dr12/en/tools/crossid/x_crossid.aspx'
+    TEMPLATES_URL = 'http://classic.sdss.org/dr7/algorithms/spectemplates/spDR2'
+    # Cross-correlation templates from DR-7 - no clear way to look this up via
+    # queries so we just name them explicitly here
+    AVAILABLE_TEMPLATES = {'star_O': 0, 'star_OB': 1, 'star_B': 2, 'star_A': [3, 4],
+                           'star_FA': 5, 'star_F': [6, 7], 'star_G': [8, 9],
+                           'star_K': 10, 'star_M1': 11, 'star_M3': 12, 'star_M5': 13,
+                           'star_M8': 14, 'star_L1': 15, 'star_wd': [16, 20, 21],
+                           'star_carbon': [17, 18, 19], 'star_Ksubdwarf': 22,
+                           'galaxy_early': 23, 'galaxy': [24, 25, 26],
+                           'galaxy_late': 27, 'galaxy_lrg': 28, 'qso': 29,
+                           'qso_bal': [30, 31], 'qso_bright': 32
+                           }
 
     def query_crossid_async(self, coordinates, obj_names=None,
                             photoobj_fields=None, specobj_fields=None,
                             get_query_payload=False, timeout=TIMEOUT,
-                            radius=5. * u.arcsec):
+                            radius=5. * u.arcsec, drorurl=12):
         """
         Query using the cross-identification web interface.
 
@@ -95,6 +88,12 @@ class SDSSClass(BaseQuery):
             Target names. If given, every coordinate should have a
             corresponding name, and it gets repeated in the query result.
             It generates unique object names by default.
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
+        drorurl : str or int
+            The data release of the SDSS to use (if an integer or short string)
+            or the full URL to send the query (if a longer string).
         """
 
         if (not isinstance(coordinates, list) and
@@ -156,7 +155,8 @@ class SDSSClass(BaseQuery):
 
         if get_query_payload:
             return request_payload
-        r = commons.send_request(SDSS.XID_URL, request_payload, timeout,
+        url = self._get_query_url(drorurl, self.XID_URL_SUFFIX)
+        r = commons.send_request(url, request_payload, timeout,
                                  request_type='POST')
 
         return r
@@ -165,7 +165,7 @@ class SDSSClass(BaseQuery):
                            fields=None, spectro=False, timeout=TIMEOUT,
                            get_query_payload=False, photoobj_fields=None,
                            specobj_fields=None, field_help=False,
-                           obj_names=None):
+                           obj_names=None, drorurl=12):
         """
         Used to query a region around given coordinates. Equivalent to
         the object cross-ID from the web interface.
@@ -213,6 +213,12 @@ class SDSSClass(BaseQuery):
         obj_names : str, or list or `~astropy.table.Column`, optional
             Target names. If given, every coordinate should have a
             corresponding name, and it gets repeated in the query result.
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
+        drorurl : str or int
+            The data release of the SDSS to use (if an integer or short string)
+            or the full URL to send the query (if a longer string).
 
         Examples
         --------
@@ -241,17 +247,21 @@ class SDSSClass(BaseQuery):
                                                 photoobj_fields=photoobj_fields,
                                                 specobj_fields=specobj_fields,
                                                 field_help=field_help,
-                                                obj_names=obj_names)
+                                                obj_names=obj_names,
+                                                drorurl=drorurl)
         if get_query_payload or field_help:
             return request_payload
-        r = commons.send_request(SDSS.QUERY_URL, request_payload, timeout,
+
+        url = self._get_query_url(drorurl, self.QUERY_URL_SUFFIX)
+        r = commons.send_request(url, request_payload, timeout,
                                  request_type='GET')
 
         return r
 
     def query_specobj_async(self, plate=None, mjd=None, fiberID=None,
                             fields=None, timeout=TIMEOUT,
-                            get_query_payload=False, field_help=False):
+                            get_query_payload=False, field_help=False,
+                            drorurl=12):
         """
         Used to query the SpecObjAll table with plate, mjd and fiberID values.
 
@@ -278,6 +288,12 @@ class SDSSClass(BaseQuery):
             Field name to check whether a valid PhotoObjAll or SpecObjAll
             field name. If `True` or it is an invalid field name all the valid
             field names are returned as a dict.
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
+        drorurl : str or int
+            The data release of the SDSS to use (if an integer or short string)
+            or the full URL to send the query (if a longer string).
 
         Examples
         --------
@@ -307,17 +323,21 @@ class SDSSClass(BaseQuery):
                                                 fiberID=fiberID,
                                                 specobj_fields=fields,
                                                 spectro=True,
-                                                field_help=field_help)
+                                                field_help=field_help,
+                                                drorurl=drorurl)
         if get_query_payload or field_help:
             return request_payload
-        r = commons.send_request(SDSS.QUERY_URL, request_payload, timeout,
+
+        url = self._get_query_url(drorurl, self.QUERY_URL_SUFFIX)
+        r = commons.send_request(url, request_payload, timeout,
                                  request_type='GET')
 
         return r
 
     def query_photoobj_async(self, run=None, rerun=301, camcol=None,
                              field=None, fields=None, timeout=TIMEOUT,
-                             get_query_payload=False, field_help=False):
+                             get_query_payload=False, field_help=False,
+                             drorurl=12):
         """
         Used to query the PhotoObjAll table with run, rerun, camcol and field
         values.
@@ -348,6 +368,12 @@ class SDSSClass(BaseQuery):
             Field name to check whether a valid PhotoObjAll or SpecObjAll
             field name. If `True` or it is an invalid field name all the valid
             field names are returned as a dict.
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
+        drorurl : str or int
+            The data release of the SDSS to use (if an integer or short string)
+            or the full URL to send the query (if a longer string).
 
         Examples
         --------
@@ -376,10 +402,13 @@ class SDSSClass(BaseQuery):
                                                 camcol=camcol, field=field,
                                                 photoobj_fields=fields,
                                                 spectro=False,
-                                                field_help=field_help)
+                                                field_help=field_help,
+                                                drorurl=drorurl)
         if get_query_payload or field_help:
             return request_payload
-        r = commons.send_request(SDSS.QUERY_URL, request_payload, timeout,
+
+        url = self._get_query_url(drorurl, self.QUERY_URL_SUFFIX)
+        r = commons.send_request(url, request_payload, timeout,
                                  request_type='GET')
 
         return r
@@ -391,7 +420,7 @@ class SDSSClass(BaseQuery):
             fsql += ' ' + line.split('--')[0]
         return fsql
 
-    def query_sql_async(self, sql_query, timeout=TIMEOUT, **kwargs):
+    def query_sql_async(self, sql_query, timeout=TIMEOUT, drorurl=12, **kwargs):
         """
         Query the SDSS database.
 
@@ -399,6 +428,12 @@ class SDSSClass(BaseQuery):
         ----------
         sql_query : str
             An SQL query
+        timeout : float, optional
+            Time limit (in seconds) for establishing successful connection with
+            remote server.  Defaults to `SDSSClass.TIMEOUT`.
+        drorurl : str or int
+            The data release of the SDSS to use (if an integer or short string)
+            or the full URL to send the query (if a longer string).
 
         Examples
         --------
@@ -432,13 +467,15 @@ class SDSSClass(BaseQuery):
                                format='csv')
         if kwargs.get('get_query_payload'):
             return request_payload
-        r = commons.send_request(SDSS.QUERY_URL, request_payload, timeout,
+
+        url = self._get_query_url(drorurl, self.QUERY_URL_SUFFIX)
+        r = commons.send_request(url, request_payload, timeout,
                                  request_type='GET')
         return r
 
     def get_spectra_async(self, coordinates=None, radius=2. * u.arcsec,
                           matches=None, plate=None, fiberID=None, mjd=None,
-                          timeout=TIMEOUT, get_query_payload=False):
+                          timeout=TIMEOUT, get_query_payload=False, dr=12):
         """
         Download spectrum from SDSS.
 
@@ -475,6 +512,12 @@ class SDSSClass(BaseQuery):
         timeout : float, optional
             Time limit (in seconds) for establishing successful connection with
             remote server.  Defaults to `SDSSClass.TIMEOUT`.
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
+        dr : int
+            The data release of the SDSS to use. With the default server, this
+            only supports DR8 or later.
 
         Returns
         -------
@@ -508,28 +551,26 @@ class SDSSClass(BaseQuery):
                 specobj_fields=['instrument', 'run2d', 'plate',
                                 'mjd', 'fiberID'],
                 coordinates=coordinates, radius=radius, spectro=True,
-                plate=plate, mjd=mjd, fiberID=fiberID)
+                plate=plate, mjd=mjd, fiberID=fiberID, drorurl=dr)
             if get_query_payload:
                 return request_payload
-            r = commons.send_request(SDSS.QUERY_URL, request_payload, timeout,
+
+            url = self._get_query_url(dr, self.QUERY_URL_SUFFIX)
+            r = commons.send_request(url, request_payload, timeout,
                                      request_type='GET')
             matches = self._parse_result(r)
-            if matches is None:
-                warnings.warn("Query returned no results.", NoResultsWarning)
-                return
 
         if not isinstance(matches, Table):
-            raise TypeError("'matches' must be an astropy Table.")
+            raise TypeError("Matches must be an astropy Table.")
 
         results = []
         for row in matches:
-            link = ('{base}/{instrument}/spectro/redux/{run2d}/spectra'
-                    '/{plate:04d}/spec-{plate:04d}-{mjd}-{fiber:04d}.fits')
-            # _parse_result returns bytes for instruments, requiring a decode
-            link = link.format(base=SDSS.SPECTRO_OPTICAL,
-                               instrument=row['instrument'].decode().lower(),
-                               run2d=row['run2d'], plate=row['plate'],
-                               fiber=row['fiberID'], mjd=row['mjd'])
+            linkstr = self.SPECTRA_URL_SUFFIX
+            # _parse_result returns bytes for instrunments, requiring a decode
+            link = linkstr.format(base=conf.sas_baseurl, dr=dr,
+                                  instrument=row['instrument'].decode().lower(),
+                                  run2d=row['run2d'], plate=row['plate'],
+                                  fiber=row['fiberID'], mjd=row['mjd'])
 
             results.append(commons.FileContainer(link,
                                                  encoding='binary',
@@ -553,16 +594,12 @@ class SDSSClass(BaseQuery):
                                                plate=plate, fiberID=fiberID,
                                                mjd=mjd, timeout=timeout)
 
-        if readable_objs is not None:
-            if isinstance(readable_objs, dict):
-                return readable_objs
-            else:
-                return [obj.get_fits() for obj in readable_objs]
+        return [obj.get_fits() for obj in readable_objs]
 
     def get_images_async(self, coordinates=None, radius=2. * u.arcsec,
                          matches=None, run=None, rerun=301, camcol=None,
                          field=None, band='g', timeout=TIMEOUT,
-                         get_query_payload=False, cache=True):
+                         get_query_payload=False, cache=True, dr=12):
         """
         Download an image from SDSS.
 
@@ -610,6 +647,12 @@ class SDSSClass(BaseQuery):
             remote server.  Defaults to `SDSSClass.TIMEOUT`.
         cache : bool
             Cache the images using astropy's caching system
+        get_query_payload : bool
+            If True, this will return the data the query would have sent out,
+            but does not actually do the query.
+        dr : int
+            The data release of the SDSS to use. With the default server, this
+            only supports DR8 or later.
 
         Returns
         -------
@@ -642,26 +685,24 @@ class SDSSClass(BaseQuery):
             request_payload = self._args_to_payload(
                 fields=['run', 'rerun', 'camcol', 'field'],
                 coordinates=coordinates, radius=radius, spectro=False, run=run,
-                rerun=rerun, camcol=camcol, field=field)
+                rerun=rerun, camcol=camcol, field=field, drorurl=dr)
             if get_query_payload:
                 return request_payload
-            r = commons.send_request(SDSS.QUERY_URL, request_payload, timeout,
+
+            url = self._get_query_url(dr, self.QUERY_URL_SUFFIX)
+            r = commons.send_request(url, request_payload, timeout,
                                      request_type='GET')
             matches = self._parse_result(r)
-            if matches is None:
-                warnings.warn("Query returned no results.", NoResultsWarning)
-                return
+
         if not isinstance(matches, Table):
-            raise ValueError("'matches' must be an astropy Table")
+            raise ValueError
 
         results = []
         for row in matches:
             for b in band:
                 # Download and read in image data
-                linkstr = ('{base}/{rerun}/{run}/{camcol}/'
-                           'frame-{band}-{run:06d}-{camcol}-'
-                           '{field:04d}.fits.bz2')
-                link = linkstr.format(base=SDSS.IMAGING, run=row['run'],
+                linkstr = self.IMAGING_URL_SUFFIX
+                link = linkstr.format(base=conf.sas_baseurl, dr=dr, run=row['run'],
                                       rerun=row['rerun'], camcol=row['camcol'],
                                       field=row['field'], band=b)
 
@@ -675,8 +716,7 @@ class SDSSClass(BaseQuery):
     @prepend_docstr_noreturns(get_images_async.__doc__)
     def get_images(self, coordinates=None, radius=2. * u.arcsec,
                    matches=None, run=None, rerun=301, camcol=None, field=None,
-                   band='g', timeout=TIMEOUT, cache=True,
-                   get_query_payload=False):
+                   band='g', timeout=TIMEOUT, cache=True):
         """
         Returns
         -------
@@ -689,13 +729,9 @@ class SDSSClass(BaseQuery):
                                               run=run, rerun=rerun,
                                               camcol=camcol, field=field,
                                               band=band, timeout=timeout,
-                                              get_query_payload=get_query_payload)
+                                              get_query_payload=False)
 
-        if readable_objs is not None:
-            if isinstance(readable_objs, dict):
-                return readable_objs
-            else:
-                return [obj.get_fits() for obj in readable_objs]
+        return [obj.get_fits() for obj in readable_objs]
 
     def get_spectral_template_async(self, kind='qso', timeout=TIMEOUT):
         """
@@ -733,14 +769,14 @@ class SDSSClass(BaseQuery):
         if kind == 'all':
             indices = list(np.arange(33))
         else:
-            indices = spec_templates[kind]
+            indices = self.AVAILABLE_TEMPLATES[kind]
             if type(indices) is not list:
                 indices = [indices]
 
         results = []
         for index in indices:
             name = str(index).zfill(3)
-            link = '%s-%s.fit' % (SDSS.TEMPLATES, name)
+            link = '%s-%s.fit' % (self.TEMPLATES_URL, name)
             results.append(commons.FileContainer(link,
                                                  remote_timeout=timeout,
                                                  encoding='binary'))
@@ -759,8 +795,7 @@ class SDSSClass(BaseQuery):
         readable_objs = self.get_spectral_template_async(kind=kind,
                                                          timeout=timeout)
 
-        if readable_objs is not None:
-            return [obj.get_fits() for obj in readable_objs]
+        return [obj.get_fits() for obj in readable_objs]
 
     def _parse_result(self, response, verbose=False):
         """
@@ -795,7 +830,7 @@ class SDSSClass(BaseQuery):
                          plate=None, mjd=None, fiberID=None, run=None,
                          rerun=301, camcol=None, field=None,
                          photoobj_fields=None, specobj_fields=None,
-                         field_help=None, obj_names=None):
+                         field_help=None, obj_names=None, drorurl=12):
         """
         Construct the SQL query from the arguments.
 
@@ -847,18 +882,25 @@ class SDSSClass(BaseQuery):
             SpecObj quantities to return. If photoobj_fields is None and
             specobj_fields is None then the value of fields is used
         field_help: str or bool, optional
-            Field name to check whether it is a valid PhotoObjAll or SpecObjAll
+            Field name to check whether a valid PhotoObjAll or SpecObjAll
             field name. If `True` or it is an invalid field name all the valid
             field names are returned as a dict.
         obj_names : str, or list or `~astropy.table.Column`, optional
             Target names. If given, every coordinate should have a
             corresponding name, and it gets repeated in the query result
+        drorurl : str or int
+            The data release of the SDSS to use (if an integer or short string)
+            or the full URL to send the query (if a longer string).
 
         Returns
         -------
         request_payload : dict
 
         """
+        # TODO: replace this with something cleaner below
+        url = self._get_query_url(drorurl, self.QUERY_URL_SUFFIX)
+        photoobj_all = get_field_info('PhotoObjAll', url, self.TIMEOUT)['name']
+        specobj_all = get_field_info('SpecObjAll', url, self.TIMEOUT)['name']
 
         if field_help:
             ret = 0
@@ -873,9 +915,9 @@ class SDSSClass(BaseQuery):
                 return
             else:
                 if field_help is not True:
-                    warnings.warn("{0} isn't a valid 'photobj_field' or "
-                                  "'specobj_field' field, valid fields are"
-                                  "returned.".format(field_help))
+                    print("{0} isn't a valid 'photobj_field' or "
+                          "'specobj_field' field, valid fields are "
+                          "returned.".format(field_help))
                 return {'photoobj_all': photoobj_all,
                         'specobj_all': specobj_all}
 
@@ -956,5 +998,11 @@ class SDSSClass(BaseQuery):
         request_payload = dict(cmd=sql, format='csv')
 
         return request_payload
+
+    def _get_query_url(self, drorurl, suffix):
+        if isinstance(drorurl, basestring) and len(drorurl) > 2:
+            return drorurl
+        else:
+            return conf.skyserver_baseurl + suffix.format(dr=drorurl)
 
 SDSS = SDSSClass()
