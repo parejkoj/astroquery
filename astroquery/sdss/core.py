@@ -5,7 +5,6 @@ Access Sloan Digital Sky Survey database online.
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 import io
-import warnings
 import numpy as np
 from astropy import units as u
 import astropy.coordinates as coord
@@ -14,7 +13,7 @@ from ..query import BaseQuery
 from . import conf
 from ..utils import commons, async_to_sync
 from ..utils.docstr_chompers import prepend_docstr_noreturns
-from ..exceptions import RemoteServiceError, NoResultsWarning
+from ..exceptions import RemoteServiceError
 
 from .field_names import photoobj_defs, specobj_defs, crossid_defs, get_field_info
 
@@ -551,19 +550,16 @@ class SDSSClass(BaseQuery):
             r = commons.send_request(url, request_payload, timeout,
                                      request_type='GET')
             matches = self._parse_result(r)
-            if matches is None:
-                warnings.warn("Query returned no results.", NoResultsWarning)
-                return
 
         if not isinstance(matches, Table):
-            raise TypeError("'matches' must be an astropy Table.")
+            raise TypeError("Matches must be an astropy Table.")
 
         results = []
         for row in matches:
             link = ('{base}/{instrument}/spectro/redux/{run2d}/spectra'
                     '/{plate:04d}/spec-{plate:04d}-{mjd}-{fiber:04d}.fits')
-            # _parse_result returns bytes for instruments, requiring a decode
-            link = link.format(base=SDSS.SPECTRO_OPTICAL,
+            # _parse_result returns bytes for instrunments, requiring a decode
+            link = link.format(base=self.SPECTRO_OPTICAL,
                                instrument=row['instrument'].decode().lower(),
                                run2d=row['run2d'], plate=row['plate'],
                                fiber=row['fiberID'], mjd=row['mjd'])
@@ -590,11 +586,7 @@ class SDSSClass(BaseQuery):
                                                plate=plate, fiberID=fiberID,
                                                mjd=mjd, timeout=timeout)
 
-        if readable_objs is not None:
-            if isinstance(readable_objs, dict):
-                return readable_objs
-            else:
-                return [obj.get_fits() for obj in readable_objs]
+        return [obj.get_fits() for obj in readable_objs]
 
     def get_images_async(self, coordinates=None, radius=2. * u.arcsec,
                          matches=None, run=None, rerun=301, camcol=None,
@@ -693,11 +685,9 @@ class SDSSClass(BaseQuery):
             r = commons.send_request(url, request_payload, timeout,
                                      request_type='GET')
             matches = self._parse_result(r)
-            if matches is None:
-                warnings.warn("Query returned no results.", NoResultsWarning)
-                return
+
         if not isinstance(matches, Table):
-            raise ValueError("'matches' must be an astropy Table")
+            raise ValueError
 
         results = []
         for row in matches:
@@ -706,7 +696,7 @@ class SDSSClass(BaseQuery):
                 linkstr = ('{base}/{rerun}/{run}/{camcol}/'
                            'frame-{band}-{run:06d}-{camcol}-'
                            '{field:04d}.fits.bz2')
-                link = linkstr.format(base=SDSS.IMAGING, run=row['run'],
+                link = linkstr.format(base=self.IMAGING, run=row['run'],
                                       rerun=row['rerun'], camcol=row['camcol'],
                                       field=row['field'], band=b)
 
@@ -720,8 +710,7 @@ class SDSSClass(BaseQuery):
     @prepend_docstr_noreturns(get_images_async.__doc__)
     def get_images(self, coordinates=None, radius=2. * u.arcsec,
                    matches=None, run=None, rerun=301, camcol=None, field=None,
-                   band='g', timeout=TIMEOUT, cache=True,
-                   get_query_payload=False):
+                   band='g', timeout=TIMEOUT, cache=True):
         """
         Returns
         -------
@@ -734,13 +723,9 @@ class SDSSClass(BaseQuery):
                                               run=run, rerun=rerun,
                                               camcol=camcol, field=field,
                                               band=band, timeout=timeout,
-                                              get_query_payload=get_query_payload)
+                                              get_query_payload=False)
 
-        if readable_objs is not None:
-            if isinstance(readable_objs, dict):
-                return readable_objs
-            else:
-                return [obj.get_fits() for obj in readable_objs]
+        return [obj.get_fits() for obj in readable_objs]
 
     def get_spectral_template_async(self, kind='qso', timeout=TIMEOUT):
         """
@@ -778,14 +763,14 @@ class SDSSClass(BaseQuery):
         if kind == 'all':
             indices = list(np.arange(33))
         else:
-            indices = SDSS.AVAILABLE_TEMPLATES[kind]
+            indices = self.AVAILABLE_TEMPLATES[kind]
             if type(indices) is not list:
                 indices = [indices]
 
         results = []
         for index in indices:
             name = str(index).zfill(3)
-            link = '%s-%s.fit' % (SDSS.TEMPLATES_URL, name)
+            link = '%s-%s.fit' % (self.TEMPLATES_URL, name)
             results.append(commons.FileContainer(link,
                                                  remote_timeout=timeout,
                                                  encoding='binary'))
@@ -804,8 +789,7 @@ class SDSSClass(BaseQuery):
         readable_objs = self.get_spectral_template_async(kind=kind,
                                                          timeout=timeout)
 
-        if readable_objs is not None:
-            return [obj.get_fits() for obj in readable_objs]
+        return [obj.get_fits() for obj in readable_objs]
 
     def _parse_result(self, response, verbose=False):
         """
@@ -892,7 +876,7 @@ class SDSSClass(BaseQuery):
             SpecObj quantities to return. If photoobj_fields is None and
             specobj_fields is None then the value of fields is used
         field_help: str or bool, optional
-            Field name to check whether it is a valid PhotoObjAll or SpecObjAll
+            Field name to check whether a valid PhotoObjAll or SpecObjAll
             field name. If `True` or it is an invalid field name all the valid
             field names are returned as a dict.
         obj_names : str, or list or `~astropy.table.Column`, optional
@@ -921,9 +905,9 @@ class SDSSClass(BaseQuery):
                 return
             else:
                 if field_help is not True:
-                    warnings.warn("{0} isn't a valid 'photobj_field' or "
-                                  "'specobj_field' field, valid fields are"
-                                  "returned.".format(field_help))
+                    print("{0} isn't a valid 'photobj_field' or "
+                          "'specobj_field' field, valid fields are "
+                          "returned.".format(field_help))
                 return {'photoobj_all': photoobj_all,
                         'specobj_all': specobj_all}
 
