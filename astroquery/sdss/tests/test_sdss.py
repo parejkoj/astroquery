@@ -106,10 +106,11 @@ coords_column = astropy.table.Column(coords_list, name='coordinates')
 # "DR11 data are distributed primarily to provide reproducibility of published results based 
 # on the DR11 data set. As such, not all data-access interfaces are supported for DR11."
 def _url_tester(dr):
-	if dr < 11:
-		assert sdss.core.SDSS._last_url == 'http://skyserver.sdss.org/dr' + str(dr) + '/en/tools/search/sql.asp'
-	if dr == 12:
-		assert sdss.core.SDSS._last_url == 'http://skyserver.sdss.org/dr12/en/tools/search/x_sql.aspx'
+    if dr < 11:
+        baseurl = 'http://skyserver.sdss.org/dr{}/en/tools/search/sql.asp'
+    if dr >= 12:
+        baseurl = 'http://skyserver.sdss.org/dr{}/en/tools/search/x_sql.aspx'
+    assert sdss.core.SDSS._last_url == baseurl.format(dr)
 
 @pytest.mark.parametrize("dr", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12])
 def test_sdss_spectrum(patch_get, patch_get_readable_fileobj, dr, coords=coords):
